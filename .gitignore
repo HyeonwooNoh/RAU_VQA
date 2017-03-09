@@ -16,3 +16,4 @@ save_*
 data/vqa_VGG16Conv_pool5_448
 data/vqa_resnet_101_convfeat_448
 data/VQA_prepro
+data/VQA_anno
