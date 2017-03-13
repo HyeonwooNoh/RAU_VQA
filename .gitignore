@@ -4,6 +4,7 @@ save_*
 # Temporary files.
 *.swp
 .~*
+*.pyc
 
 # Images.
 *.png
@@ -11,6 +12,9 @@ save_*
 
 # Compressed fiels.
 *.tar.gz
+
+# Json
+*.json
 
 # Data.
 data/vqa_VGG16Conv_pool5_448
