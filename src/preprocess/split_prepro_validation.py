@@ -3,6 +3,8 @@ import json
 import numpy as np
 import os
 
+from src.tools import utils
+
 PREPRO_VALID_DIR="data/VQA_prepro/data_train_val"
 JSON_FILE="data_prepro.json"
 HDF5_FILE="data_prepro.h5"
@@ -39,17 +41,6 @@ def SplitHdf5Data(hdf5_data, qid_to_index, valid_question_ids):
                          valid_question_ids)	
 
 	return split_data	
-
-def SaveHdf5Data(save_path, hdf5_data):	
-	with h5py.File(save_path, 'w') as f:
-		for key, numpy_data in hdf5_data.iteritems():
-			f.create_dataset(key, dtype=numpy_data.dtype, data=numpy_data)
-		f.close()
-
-def CheckAndCreateDir(dir_path):
-	if not os.path.isdir(dir_path):
-		print "Directory doesn't exist, create one: {}".format(dir_path)
-		os.makedirs(dir_path)
 
 def main():
 	json_path = os.path.join(PREPRO_VALID_DIR, JSON_FILE)
@@ -90,9 +81,9 @@ def main():
 	print '\t-'+'\n\t-'.join(valid_2_hdf5.keys())
 
 	# Save valid 1 split.
-	CheckAndCreateDir(PREPRO_VALID_1_DIR)
+	utils.CheckAndCreateDir(PREPRO_VALID_1_DIR)
 	valid_1_hdf5_path = os.path.join(PREPRO_VALID_1_DIR, HDF5_FILE)
-	SaveHdf5Data(valid_1_hdf5_path, valid_1_hdf5)
+	utils.SaveHdf5Data(valid_1_hdf5_path, valid_1_hdf5)
 	print "Valid 1 hdf5 data is saved in: {}".format(valid_1_hdf5_path)
 
 	valid_1_json_path = os.path.join(PREPRO_VALID_1_DIR, JSON_FILE)
@@ -101,9 +92,9 @@ def main():
 		valid_1_json_path)
 
 	# Save valid 2 split.
-	CheckAndCreateDir(PREPRO_VALID_2_DIR)
+	utils.CheckAndCreateDir(PREPRO_VALID_2_DIR)
 	valid_2_hdf5_path = os.path.join(PREPRO_VALID_2_DIR, HDF5_FILE)
-	SaveHdf5Data(valid_2_hdf5_path, valid_2_hdf5)
+	utils.SaveHdf5Data(valid_2_hdf5_path, valid_2_hdf5)
 	print "Valid 2 hdf5 data is saved in: {}".format(valid_2_hdf5_path)
 
 	valid_2_json_path = os.path.join(PREPRO_VALID_2_DIR, JSON_FILE)
@@ -114,4 +105,3 @@ def main():
 	
 if __name__ == "__main__":
 	main()
-
