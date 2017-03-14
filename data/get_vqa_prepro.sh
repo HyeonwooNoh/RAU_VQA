@@ -29,4 +29,13 @@ wget http://cvlab.postech.ac.kr/research/imageqa/data/vqa_prepro/comprehend.tar.
 tar -zxvf comprehend.tar.gz
 rm -rf comprehend.tar.gz
 
+# Train / valid-1 and Train / valid-2 split
+wget http://cvlab.postech.ac.kr/~hyeonwoonoh/research/imageqa/data/VQA_prepro/data_train_val-1.tar.gz
+tar -zxvf data_train_val-1.tar.gz
+rm -rf data_train_val-1.tar.gz
+
+wget http://cvlab.postech.ac.kr/~hyeonwoonoh/research/imageqa/data/VQA_prepro/data_train_val-2.tar.gz
+tar -zxvf data_train_val-2.tar.gz
+rm -rf data_train_val-2.tar.gz
+
 cd ..
