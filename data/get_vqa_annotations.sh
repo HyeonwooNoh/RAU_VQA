@@ -20,4 +20,12 @@ wget http://visualqa.org/data/mscoco/vqa/Questions_Test_mscoco.zip
 unzip Questions_Test_mscoco.zip
 rm -rf Questions_Test_mscoco.zip
 
+# Valid 1, Valid 2 annotations
+wget cvlab.postech.ac.kr/~hyeonwoonoh/research/imageqa/data/annotations/mscoco_val-1-2014_annotations.json
+wget cvlab.postech.ac.kr/~hyeonwoonoh/research/imageqa/data/annotations/mscoco_val-2-2014_annotations.json
+wget cvlab.postech.ac.kr/~hyeonwoonoh/research/imageqa/data/annotations/OpenEnded_mscoco_val-1-2014_questions.json
+wget cvlab.postech.ac.kr/~hyeonwoonoh/research/imageqa/data/annotations/OpenEnded_mscoco_val-2-2014_questions.json
+wget cvlab.postech.ac.kr/~hyeonwoonoh/research/imageqa/data/annotations/MultipleChoice_mscoco_val-1-2014_questions.json
+wget cvlab.postech.ac.kr/~hyeonwoonoh/research/imageqa/data/annotations/MultipleChoice_mscoco_val-2-2014_questions.json
+
 cd ..

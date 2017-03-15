@@ -5,6 +5,7 @@ save_*
 *.swp
 .~*
 *.pyc
+*.swo
 
 # Images.
 *.png
