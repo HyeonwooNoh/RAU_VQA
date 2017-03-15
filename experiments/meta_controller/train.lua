@@ -26,7 +26,7 @@ cmd:option('-loss_explod_threshold', 3, 'loss explosion threshold')
 
 cmd:text('DATA')
 cmd:option('-data_dir', './experiments/Ours_MS/save_result_vqa_448_val2014'..
-           '/oracle_prediction/OpenEnded_8_steps_40_epochs',
+           '/oracle_prediction/OpenEnded_08_steps_40_epochs',
            'oracle data directory')
 cmd:option('-feat_dir', './data/vqa_VGG16Conv_pool5_448/feat_448x448',
            'vqa feature directory')
@@ -71,7 +71,7 @@ cmd:option('-prediction_type', 'best_shortest',
 
 cmd:text('SAVE')
 cmd:option('-save_dir', './experiments/Ours_MS/save_result_vqa_448_val2014'..
-           '/oracle_prediction/OpenEnded_8_steps_40_epochs',
+           '/oracle_prediction/OpenEnded_08_steps_40_epochs',
            'subdirectory to save results [log, snapshot]')
 cmd:option('-seed', 123, 'torch manual random number generator seed')
 
