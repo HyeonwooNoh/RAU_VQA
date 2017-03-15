@@ -33,6 +33,7 @@ cmd:option('-split', 'val2014', 'option: [val2014|test2015|test-dev2015]')
 cmd:option('-vqa_dir', './data/VQA_prepro/data_train_val','vqa data directory')
 cmd:option('-feat_dir', './data/vqa_VGG16Conv_pool5/feat_224x224', 'vqa feature directory')
 cmd:option('-gt_anno', './data/VQA_prepro/comprehend/comprehend_val2014_annotations.json', '')
+cmd:option('-cnnout_dim', 512, 'cnnout_dim')
 cmd:option('-cnnout_w', 7, 'cnnout_w')
 cmd:option('-cnnout_h', 7, 'cnnout_h')
 
@@ -213,7 +214,7 @@ local rnnout_dim = 2*rnn_size*nrnn_layer
 protos.rnn = DeepLSTM.create(embed_dim, rnn_size, nrnn_layer, rnn_dropout)
 
 -- MULTIMODAL (ATTENTION)
-local cnnout_dim = 512
+local cnnout_dim = tonumber(opt.cnnout_dim)
 local cnnout_w = tonumber(opt.cnnout_w)
 local cnnout_h = tonumber(opt.cnnout_h)
 local cnnout_spat = cnnout_w * cnnout_h
@@ -486,8 +487,8 @@ function feval(step_t)
       tab_mult_h[h] = pred[5]
       -- compute accuracy
       local max_score, ans = torch.max(pred[1], 2)
-            ans = torch.squeeze(ans)
-      local is_correct = torch.eq(ans, y)
+            ans = torch.squeeze(ans):cuda()
+      local is_correct = torch.eq(ans, y):cuda()
       tab_train_acc[h] = tab_train_acc[h] + is_correct:sum()
       tab_train_num_data[h] = tab_train_num_data[h] + y:nElement()
       
@@ -498,7 +499,7 @@ function feval(step_t)
       tab_do_pred_gt[h] = do_pred_gt:clone()
  
       -- compute do pred accuracy
-      local do_pred = torch.gt(pred[2], 0.5)
+      local do_pred = torch.gt(pred[2], 0.5):cuda()
       if opt.gpuid < 0 then do_pred = do_pred:float() end
 
       -- accumulate select_pred
@@ -522,8 +523,8 @@ function feval(step_t)
    uni_pred:div(nHop)
    -- compute accuracy
    local max_score, ans = torch.max(uni_pred, 2)
-         ans = torch.squeeze(ans)
-   tab_train_acc[nHop+1] = tab_train_acc[nHop+1] + torch.eq(ans, y):sum()
+         ans = torch.squeeze(ans):cuda()
+   tab_train_acc[nHop+1] = tab_train_acc[nHop+1] + torch.eq(ans, y):cuda():sum()
    tab_train_num_data[nHop+1] = tab_train_num_data[nHop+1] + y:nElement()
    -- loss forward
    local loss = protos.criterion:forward(uni_pred, y)
@@ -532,8 +533,8 @@ function feval(step_t)
    -- select pred (selective merge)
    -- compute accuracy
    local max_score, ans = torch.max(select_pred, 2)
-         ans = torch.squeeze(ans)
-   tab_train_acc[nHop+2] = tab_train_acc[nHop+2] + torch.eq(ans, y):sum()
+         ans = torch.squeeze(ans):cuda()
+   tab_train_acc[nHop+2] = tab_train_acc[nHop+2] + torch.eq(ans, y):cuda():sum()
    tab_train_num_data[nHop+2] = tab_train_num_data[nHop+2] + y:nElement()
    -- loss forward
    local loss = protos.criterion:forward(select_pred, y)
@@ -546,10 +547,10 @@ function feval(step_t)
                                h, tab_do_pred_gt[h]:min(), tab_do_pred_gt[h]:max(), tab_do_pred_gt[h]:mean())
  
       -- compute do pred accuracy
-      local do_pred = torch.gt(tab_do_pred[h], 0.5)
+      local do_pred = torch.gt(tab_do_pred[h], 0.5):cuda()
       if opt.gpuid < 0 then do_pred = do_pred:float() end
       -- if did_correct: 0, don care this batch as no hop have correct answer
-      tab_train_do_pred_acc[h] = tab_train_do_pred_acc[h] + torch.cmul(torch.eq(do_pred, tab_do_pred_gt[h]), did_correct):sum()
+      tab_train_do_pred_acc[h] = tab_train_do_pred_acc[h] + torch.cmul(torch.eq(do_pred, tab_do_pred_gt[h]):cuda(), did_correct):sum()
       tab_train_do_pred_num_data[h] = tab_train_do_pred_num_data[h] + did_correct:sum()     
 
       local loss_do_pred = mult_protos.bincriterions[h]:forward(tab_do_pred[h], tab_do_pred_gt[h])
@@ -680,7 +681,7 @@ function predict_result (feats, x, x_len)
       test_uni_pred:add(pred[1])
       test_uni_att:add(pred[3])
       -- select pred accumulate
-      local do_pred = torch.gt(pred[2], 0.5)
+      local do_pred = torch.gt(pred[2], 0.5):cuda()
       if opt.gpuid < 0 then do_pred = do_pred:float() end
       if h == nHop then do_pred:fill(1) end -- for testing, always predict in the final step
       local pred_cur_hop = torch.add(do_pred, -test_did_pred):clamp(0,1):reshape(opt.test_batch_size,1)
