@@ -372,7 +372,8 @@ do
 		-- The input config is table containing following variables:
 		--		* data_dir: data directory containing data_prepro.h5 and
 		--	     data_prepro.json
-		--    * batch_size: batch_size of the loaded data
+		--    * train_batch_size: batch_size of the loaded training data
+		--    * test_batch_size: batch_size of the loaded testing data
       --    * use_prefetch: whether to use prefetch or not
 		self:CheckConfig(config)
 
@@ -442,7 +443,7 @@ do
 			['split']='train',
 			['sequence_length']=self.sequence_length,
 			['use_prefetch']=config['use_prefetch'],
-			['batch_size']=config['batch_size'],
+			['batch_size']=config['train_batch_size'],
 		})
 		self.test_data = DataFetcher({
 			['questions']=test_questions,
@@ -450,15 +451,17 @@ do
 			['split']='test',
 			['sequence_length']=self.sequence_length,
 			['use_prefetch']=config['use_prefetch'],
-			['batch_size']=config['batch_size'],
+			['batch_size']=config['test_batch_size'],
 		})
 	end
 
 	function OracleLoader:CheckConfig(config)
 		if config['data_dir'] == nil then
 			error("Missing values in config: data_dir")
-		elseif config['batch_size'] == nil then
-			error("Missing values in config: batch_size")
+		elseif config['train_batch_size'] == nil then
+			error("Missing values in config: train_batch_size")
+		elseif config['test_batch_size'] == nil then
+			error("Missing values in config: test_batch_size")
 		elseif config['use_prefetch'] == nil then
 			error("Missing values in config: use_prefetch")
 		end
