@@ -89,7 +89,7 @@ torch.manualSeed(opt.seed)
 opt.test_batch_size = 83
 
 -- constant options
-opt.save_dir = paths.concat(opt.save_dir, 'meta_controller')
+opt.save_dir = paths.concat(opt.save_dir, 'meta_controller_'..opt.prediction_type)
 opt.log_dir = 'training_log'
 opt.snapshot_dir = 'snapshot'
 opt.results_dir = 'results'
@@ -228,14 +228,21 @@ local in_q = nn.Identity()()
 local in_i = nn.Identity()()
    local qfeat = q_embed(in_q)
    local ifeat = i_embed(in_i)
-	local logit = classifier({qfeat, ifeat})
+	local logit
+	if opt.prediction_type == 'is_best' then
+		logit = Sigmoid()(classifier({qfeat, ifeat}))
+	elseif opt.prediction_type == 'best_shortest' then
+		logit = classifier({qfeat, ifeat})
+	end
 protos.multimodal = nn.gModule({in_q, in_i}, {logit})
 
 -- Criterion
 if opt.prediction_type == 'is_best' then
 	protos.criterion = nn.BCECriterion()
+	protos.score_function = nn.Identity()
 elseif opt.prediction_type == 'best_shortest' then
 	protos.criterion = nn.CrossEntropyCriterion()
+	protos.score_function = SoftMax()
 else
 	error('Unknown prediction type')
 end
@@ -286,8 +293,19 @@ if opt.gpuid >= 0 then
    test_init_state = test_init_state:cuda()
    test_rnn_out = test_rnn_out:cuda()
 end
-train_acc = 0
+if opt.prediction_type == 'is_best' then
+	train_acc = {}
+	for i = 1, oracle_data.train_data.num_steps do
+		train_acc[i] = 0
+	end
+elseif opt.prediction_type == 'best_shortest' then
+	train_acc = 0
+end
 train_num_data = 0
+train_prediction_hist = {}
+for i = 1, oracle_data.train_data.num_steps do
+	train_prediction_hist[i] = 0
+end
 
 iter_print = ''
 --------------------------------------------------------
@@ -338,14 +356,39 @@ function feval(step_t)
 
 	-- Compute accuracy
 	if opt.prediction_type == 'is_best' then
-		error('Not implemented yet')
+		local ans = torch.gt(logit, 0.5):cuda()
+		local pos_count = ans:sum(1):squeeze()
+		local is_correct = torch.eq(ans, is_best):cuda()
+		local correct_count = is_correct:sum(1):squeeze()
+		for i = 1, oracle_data.train_data.num_steps do
+			train_acc[i] = train_acc[i] + correct_count[i]
+		end
+		train_num_data = train_num_data + best_shortest:nElement()
+		for i = 1, oracle_data.train_data.num_steps do
+			train_prediction_hist[i] = train_prediction_hist[i] + pos_count[i]
+		end
 	elseif opt.prediction_type == 'best_shortest' then
 		local max_score, ans = torch.max(logit, 2)
 			ans = torch.squeeze(ans):cuda()
 		local is_correct = torch.eq(ans, best_shortest):cuda()
 		train_acc = train_acc + is_correct:sum()
 		train_num_data = train_num_data + best_shortest:nElement()
+		for b = 1, opt.batch_size do
+			step_prediction_label = ans[b]	
+			train_prediction_hist[step_prediction_label] =
+				train_prediction_hist[step_prediction_label] + 1
+		end
 	end
+	pred_dist_print = 'step:'
+	for i = 1, oracle_data.train_data.num_steps do
+		pred_dist_print = pred_dist_print .. string.format('\t%03d', i)
+	end
+	pred_dist_print = pred_dist_print .. '\nratio:'
+	for i = 1, oracle_data.train_data.num_steps do
+		pred_dist_print = pred_dist_print .. 
+			string.format('\t%.3f', train_prediction_hist[i] / train_num_data)
+	end
+	iter_print = iter_print .. pred_dist_print .. '\n'
 
    -- Loss forward, backward
    local loss
@@ -444,8 +487,10 @@ function predict_result (feats, x, x_len)
    -- MULTIMODAL FORWARDl
 	protos.multimodal:evaluate()
 	local logit = protos.multimodal:forward({test_rnn_out, feats})
+	protos.score_function:evaluate()
+	local score = protos.score_function:forward(logit)
 
-   return logit
+   return logit, score
 end
 
 -- create log file for optimization
@@ -462,6 +507,12 @@ oracle_data.train_data:Reorder()
 local epoch_history = {}
 local trainacc_history = {}
 local testacc_history = {}
+if opt.prediction_type == 'is_best' then
+	for i = 1, oracle_data.train_data.num_steps do
+		trainacc_history[i] = {}
+		testacc_history[i] = {}
+	end
+end
 local dense_epoch_history = {}
 local dense_trainloss = {}
 local trainloss_history = {}
@@ -508,21 +559,6 @@ for it = 1, total_iter do
       table.insert(dense_trainloss, avgloss)
       table.insert(dense_epoch_history, epoch)
    end
-   if opt.display == 'true' then
-      local base_display_id = opt.display_id + 100
-      if it % opt.denseloss_saveinterval == 1 then
-         local line_dense_epoch = torch.Tensor(dense_epoch_history)
-         local tab_label = {'epoch'}
-         local line_dense_trainloss = torch.Tensor(dense_trainloss)
-         line_dense_epoch = line_dense_epoch:cat(line_dense_trainloss, 2)
-         table.insert(tab_label, 'train')
-         disp.plot(line_dense_epoch,
-                   {title='training loss',
-                    labels=tab_label,
-                    ylabel='loss', win=base_display_id})
-         base_display_id = base_display_id + 1
-      end
-   end
    accum_trainloss = accum_trainloss + train_loss
    
    if it % opt.print_iter == 0 then
@@ -541,8 +577,20 @@ for it = 1, total_iter do
       -- inorder
       oracle_data.test_data:Inorder()
       local test_iter = oracle_data.test_data.iter_per_epoch
-		local test_acc = 0
+		local test_acc
+		if opt.prediction_type == 'is_best' then
+			test_acc = {}
+			for i = 1, oracle_data.train_data.num_steps do
+				test_acc[i] = 0
+			end
+		elseif opt.prediction_type == 'best_shortest' then
+			test_acc = 0
+		end
 		local test_num_data = 0
+		local test_prediction_hist = {}
+		for i = 1, oracle_data.train_data.num_steps do
+			test_prediction_hist[i] = 0
+		end
 		local oracle_predict_results_table = {}
       print(string.format('start test'))
       for k = 1, test_iter do
@@ -554,10 +602,20 @@ for it = 1, total_iter do
 				is_best = is_best:cuda()
 				best_shortest = best_shortest:cuda()
 			end
-			local logit = predict_result(feats, x, x_len)
+			local logit, score = predict_result(feats, x, x_len)
 			local max_score, ans
 			if opt.prediction_type == 'is_best' then
-				error('Not implemented yet')
+				ans = torch.gt(logit, 0.5):cuda()
+				local pos_count = ans:sum(1):squeeze()
+				local is_correct = torch.eq(ans, is_best):cuda()
+				local correct_count = is_correct:sum(1):squeeze()
+				for i = 1, oracle_data.train_data.num_steps do
+					test_acc[i] = test_acc[i] + correct_count[i]
+				end
+				test_num_data = test_num_data + best_shortest:nElement()
+				for i = 1, oracle_data.train_data.num_steps do
+					test_prediction_hist[i] = test_prediction_hist[i] + pos_count[i]
+				end
 			elseif opt.prediction_type == 'best_shortest' then
 				-- Compute accuracy
 			   max_score, ans = torch.max(logit, 2)
@@ -565,62 +623,79 @@ for it = 1, total_iter do
 				local is_correct = torch.eq(ans, best_shortest):cuda()
 				test_acc = test_acc + is_correct:sum()
 				test_num_data = test_num_data + best_shortest:nElement()
+				for b = 1, opt.test_batch_size do
+					step_prediction_label = ans[b]	
+					test_prediction_hist[step_prediction_label] =
+						test_prediction_hist[step_prediction_label] + 1
+				end
 			end
 			-- Save results
 			for bidx=1, qids:size(1) do
 				local oracle_predict_result = {}
 				oracle_predict_result['question_id'] = qids[bidx]
 				if opt.prediction_type == 'is_best' then
-					error('Not implemented yet')
+					is_best_pred = {}
+					for i = 1, oracle_data.train_data.num_steps do
+						is_best_pred[i] = ans[{bidx, i}]
+					end
+					oracle_predict_result['is_best'] = is_best_pred
 				elseif opt.prediction_type == 'best_shortest' then
 					oracle_predict_result['best_shortest'] = ans[bidx]
 				end
+				score_values = {}
+				for i = 1, oracle_data.train_data.num_steps do
+					score_values[i] = score[{bidx, i}]
+				end
+				oracle_predict_result['score_values'] = score_values
 				table.insert(oracle_predict_results_table, oracle_predict_result)
 			end
          if k % opt.free_interval == 0 then collectgarbage() end
       end
       if train_num_data ~= 0 then 
-         train_acc = train_acc / train_num_data
+			if opt.prediction_type == 'is_best' then
+				for i = 1, oracle_data.train_data.num_steps do
+					train_acc[i] = train_acc[i] / train_num_data
+				end
+			elseif opt.prediction_type == 'best_shortest' then
+				train_acc = train_acc / train_num_data
+			end
+			for i = 1, oracle_data.train_data.num_steps do
+				train_prediction_hist[i] = train_prediction_hist[i] / train_num_data
+			end
       end
 		if test_num_data ~= 0 then
-			test_acc = test_acc / test_num_data
+			if opt.prediction_type == 'is_best' then
+				for i = 1, oracle_data.train_data.num_steps do
+					test_acc[i] = test_acc[i] / test_num_data
+				end
+			elseif opt.prediction_type == 'best_shortest' then
+				test_acc = test_acc / test_num_data
+			end
+			for i = 1, oracle_data.train_data.num_steps do
+				test_prediction_hist[i] = test_prediction_hist[i] / test_num_data
+			end
 		end
       if iter_epoch ~= 0 then accum_trainloss = accum_trainloss / iter_epoch end
       -- draw figures      
       table.insert(epoch_history, epoch)
-      table.insert(trainacc_history, train_acc)
       table.insert(trainloss_history, accum_trainloss)
       table.insert(lr_history, learningrate)
       table.insert(mult_lr_history, multlearningrate)
-		table.insert(testacc_history, test_acc)
+		if opt.prediction_type == 'is_best' then
+			for i = 1, oracle_data.train_data.num_steps do
+				table.insert(trainacc_history[i], train_acc[i])
+				table.insert(testacc_history[i], test_acc[i])
+			end
+		elseif opt.prediction_type == 'best_shortest' then
+			table.insert(trainacc_history, train_acc)
+			table.insert(testacc_history, test_acc)
+		end
 
       local base_display_id = opt.display_id + 200
 
       -- epoch history (used globally)
       local line_epoch = torch.Tensor(epoch_history)
 
-      -- accuracy curve
-      local line_trainacc = torch.Tensor(trainacc_history)
-      local line_testacc = torch.Tensor(testacc_history)
-      if epoch % opt.graph_interval == 0 or it == total_iter then
-         local fname_accplot = paths.concat(string.format('%s/%s', opt.save_dir,
-				opt.graph_dir), 'accuracy_curve.png')
-         gnuplot.pngfigure(fname_accplot)
-         gnuplot.plot({'train', line_epoch, line_trainacc},
-                      {'test', line_epoch, line_testacc})
-         gnuplot.xlabel('epoch')
-         gnuplot.ylabel('accuracy')
-         gnuplot.movelegend('right','bottom')
-         gnuplot.title(string.format('train / test accuracy'))
-         gnuplot.plotflush()
-      end
-      if opt.display == 'true' then
-         disp.plot(line_epoch:cat(line_trainacc, 2):cat(line_testacc, 2),
-                   {title='train / test accuracy',
-                    labels={'epoch', 'train', 'test'},
-                    ylabel='accuracy', win=base_display_id})
-         base_display_id = base_display_id + 1
-      end
       -- loss curve
       local line_trainloss = torch.Tensor(trainloss_history)
       if epoch % opt.graph_interval == 0 or it == total_iter then
@@ -663,16 +738,46 @@ for it = 1, total_iter do
       end
       local tab_testlog = {}
       tab_testlog['epoch'] = epoch
-      tab_testlog['trainacc'] = train_acc * 100
-      tab_testlog['testacc'] = test_acc * 100
+		if opt.prediction_type == 'is_best' then
+			for i = 1, oracle_data.train_data.num_steps do
+				tab_testlog[string.format('trainacc_%02d', i)] = train_acc[i] * 100
+				tab_testlog[string.format('testacc_%02d', i)] = test_acc[i] * 100
+			end
+		elseif opt.prediction_type == 'best_shortest' then
+			tab_testlog['trainacc'] = train_acc * 100
+			tab_testlog['testacc'] = test_acc * 100
+		end
       testLogger:add(tab_testlog)
       print(string.format('iter: %d, epoch: %f', it, epoch))
       print_acc = ''
-      print_acc = print_acc .. string.format('trainacc: %f, ', train_acc * 100)
-      print_acc = print_acc .. string.format('testacc: %f, ', test_acc * 100)
+		if opt.prediction_type == 'is_best' then
+			for i = 1, oracle_data.train_data.num_steps do
+				print_acc = print_acc .. string.format(
+					'trainacc_%02d: %f, ',i, train_acc[i] * 100)
+				print_acc = print_acc .. string.format(
+					'testacc_%02d: %f, ',i, test_acc[i] * 100)
+			end
+		elseif opt.prediction_type == 'best_shortest' then
+			print_acc = print_acc .. string.format('trainacc: %f, ', train_acc * 100)
+			print_acc = print_acc .. string.format('testacc: %f, ', test_acc * 100)
+		end
       print_acc = print_acc .. string.format('trainloss: %f, ', accum_trainloss)
       print_acc = print_acc .. '\n'
       print(print_acc)
+
+		print_hist = 'step:'
+		for i = 1, oracle_data.train_data.num_steps do
+			print_hist = print_hist .. string.format('\t%03d', i)
+		end
+		print_hist = print_hist .. '\ntrain_prediction_hist\nratio:'
+		for i = 1, oracle_data.train_data.num_steps do
+			print_hist = print_hist .. string.format('\t%.3f', train_prediction_hist[i])
+		end
+		print_hist = print_hist .. '\ntest_prediction_hist\nratio:'
+		for i = 1, oracle_data.train_data.num_steps do
+			print_hist = print_hist .. string.format('\t%.3f', test_prediction_hist[i])
+		end
+		print(print_hist .. '\n')
 
 		-- SAVE RESULTS
 		local fn_result = string.format('oracle_selection_%.2f_epoch.json', epoch)	
@@ -691,10 +796,19 @@ for it = 1, total_iter do
       checkpoint.epoch = epoch
       checkpoint.params = {[1]=embed_param, [2]=rnn_param, [3]=mult_param}
       torch.save(savefile, checkpoint)
-
-      train_acc = 0
+	
+		if opt.prediction_type == 'is_best' then
+			for i = 1, oracle_data.train_data.num_steps do
+				train_acc[i] = 0
+			end
+		elseif opt.prediction_type == 'best_shortest' then
+			train_acc = 0
+		end
       train_num_data = 0
       accum_trainloss = 0
+		for i = 1, oracle_data.train_data.num_steps do
+			train_prediction_hist[i] = 0
+		end
    end
    print (iter_print)
    iter_print = ''
