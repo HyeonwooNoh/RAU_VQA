@@ -109,11 +109,11 @@ def main():
 	json.dump(oracle_selection_results, open(output_json_path, 'w'))
 
 	# Print results
-	print "name\toverall\tyes/no\tnumber\tother"
+	print "name,\toverall,\tyes/no,\tnumber,\tother"
 	for name, result in oracle_selection_results.iteritems():
 		ansType = result['perAnswerType']
-		print "{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}".format(
-			name, result['overall'], ansType['yes/no'], ansType['number'],
+		print "{},\t{:.2f},\t{:.2f},\t{:.2f},\t{:.2f}".format(
+			name.ljust(20), result['overall'], ansType['yes/no'], ansType['number'],
 			ansType['other'])
 
 if __name__ == "__main__":
