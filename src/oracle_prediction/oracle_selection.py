@@ -38,7 +38,8 @@ def PerformStepSelection(res_jsons_per_step, qid_to_selected_step):
 	return selected_res_json
 
 def _GetArgs():
-	parser = argparse.ArgumentParser()
+	parser = argparse.ArgumentParser(
+		formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 	parser.add_argument("--result_dir",
 		default="experiments/Ours_MS/save_result_vqa_448_val2014",
 		help="Directory containing results for multiple hops")

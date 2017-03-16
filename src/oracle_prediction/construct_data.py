@@ -20,7 +20,8 @@ _JSON_FILE="data_prepro.json"
 _HDF5_FILE="data_prepro.h5"
 	
 def _GetArgs():
-	parser = argparse.ArgumentParser()
+	parser = argparse.ArgumentParser(
+		formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 	parser.add_argument("--result_dir",
 		default="experiments/Ours_MS/save_result_vqa_448_val2014",
 		help="Directory containing results for multiple hops")
