@@ -517,13 +517,15 @@ function predict_result (feats, x, x_len, qids)
 
 		-- hard aggregation
 		if opt.prediction_type == 'is_best' then
-			is_best_cur_hop = is_best_tensor:narrow(2,h,1):squeeze():cuda()
+			is_best_cur_hop = is_best_tensor:narrow(2,h,1):reshape(
+				opt.test_batch_size, 1):cuda()
 			test_hard_aggregate_pred:add(torch.cmul(pred[1],
 				is_best_cur_hop:repeatTensor(1, netout_dim)))
 			test_hard_aggregate_att:add(torch.cmul(pred[3],
 				is_best_cur_hop:repeatTensor(1, cnnout_spat)))
 		elseif opt.prediction_type == 'best_shortest' then
-			is_best_shortest_cur_hop = best_shortest_tensor:eq(h):cuda()
+			is_best_shortest_cur_hop = best_shortest_tensor:eq(h):reshape(
+				opt.test_batch_size,1):cuda()
 			test_hard_aggregate_pred:add(torch.cmul(pred[1],
 				is_best_shortest_cur_hop:repeatTensor(1, netout_dim)))
 			test_hard_aggregate_att:add(torch.cmul(pred[3],
@@ -552,7 +554,7 @@ function predict_result (feats, x, x_len, qids)
 	tab_pred[nHop+3] = test_hard_aggregate_pred
 	tab_att[nHop+3] = test_hard_aggregate_att
 	tab_pred[nHop+4] = test_soft_aggregate_pred
-	tab_att[nHop+4] = test_hard_aggregate_att
+	tab_att[nHop+4] = test_soft_aggregate_att
 
    return tab_pred, tab_att
 end
