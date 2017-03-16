@@ -49,7 +49,7 @@ def _GetArgs():
 		help="Number of steps used for the target recurrent answering units")
 	parser.add_argument("--num_epochs", default=40,
 		help="Number of epochs for trained models")
-	parser.add_argument("--meta_controller_epoch", default=40,
+	parser.add_argument("--meta_controller_epoch", default=10, type=int,
 		help="Number of epochs for training meta controller")
 	parser.add_argument("--algorithm_name",
 		default="LstmAttCtrlGradNoiseDontSelect448Pool5",
@@ -63,6 +63,11 @@ def main():
 	print "Parsed input parameters:"
 	print json.dumps(params, indent=4)
 
+	print "Increment num_steps by 4. as additional 4 steps contains:"
+	print "1) ensemble, 2) dopred selection, 3) hard_selection, 4)soft_selection"
+	original_num_steps = params['num_steps']
+	params['num_steps'] = params['num_steps'] + 4
+
 	print "Load annotation and questions for validation 2 set."
 	anno_json = json.load(open(_VALID_2_ANNO, 'r'))
 	ques_json = json.load(open(_VALID_2_QUESTIONS, 'r'))
@@ -73,17 +78,14 @@ def main():
 	res_jsons_per_step = [oracle_utils.FilterResultsByQuestions(res_json,
 		ques_json) for res_json in res_jsons_per_step]
 
-	oracle_selection = oracle_utils.LoadOracleSelectionData(params)
-	qid_to_selected_step = GetSelectedStep(oracle_selection,
-                                          selection_option='best_shortest')
-	selected_res_json = PerformStepSelection(res_jsons_per_step,
-                                            qid_to_selected_step)
-	
 	oracle_selection_results = {}
-	oracle_selection_results['predicted_best_shortest'] = \
-		oracle_utils.EvaluateResult(selected_res_json, vqa_data, ques_json)
 	eval_results_per_step = oracle_utils.EvaluateMultipleSteps(
 		res_jsons_per_step, vqa_data, ques_json)
+	oracle_selection_results["ensemble"] = eval_results_per_step[original_num_steps]
+	oracle_selection_results["do_pred_selection"] = eval_results_per_step[original_num_steps+1]
+	oracle_selection_results["hard_selection"] = eval_results_per_step[original_num_steps+2]
+	oracle_selection_results["soft_selection"] = eval_results_per_step[original_num_steps+3]
+	eval_results_per_step = eval_results_per_step[:original_num_steps]
 	for i, eval_result in enumerate(eval_results_per_step):
 		oracle_selection_results["step_{}".format(i+1)] = eval_result
 
@@ -101,9 +103,17 @@ def main():
 		oracle_utils.EvaluateResult(oracle_res_json, vqa_data, ques_json)
 
 	# Output json path
-	output_json_path = oracle_utils.GetStepSelectionResultJsonFilePath(params)
+	output_json_path = oracle_utils.GetComprehensiveResultJsonFilePath(params)
 	utils.CheckAndCreateDir(os.path.dirname(output_json_path))
 	json.dump(oracle_selection_results, open(output_json_path, 'w'))
+
+	# Print results
+	print "name\toverall\tyes/no\tnumber\tother"
+	for name, result in oracle_selection_results.iteritems():
+		ansType = result['perAnswerType']
+		print "{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}".format(
+			name, result['overall'], ansType['yes/no'], ansType['number'],
+			ansType['other'])
 
 if __name__ == "__main__":
 	main()

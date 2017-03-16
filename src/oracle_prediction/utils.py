@@ -22,15 +22,24 @@ def GetOraclePredictionDataDir(params):
 
 def GetOracleSelectionJsonFilePath(params):
 	oracle_prediction_data_dir = GetOraclePredictionDataDir(params)
-	return os.path.join(oracle_prediction_data_dir, 'meta_controller',\
+	return os.path.join(oracle_prediction_data_dir, 'meta_controller_best_shortest',\
 		'results', "oracle_selection_{:.2f}_epoch.json".format(\
 		params['meta_controller_epoch']))
 
 def GetStepSelectionResultJsonFilePath(params):
 	oracle_prediction_data_dir = GetOraclePredictionDataDir(params)
-	return os.path.join(oracle_prediction_data_dir, 'meta_controller',\
+	return os.path.join(oracle_prediction_data_dir, 'meta_controller_best_shortest',\
 		'selection_results', "step_selection_{:.2f}_epoch.json".format(\
 		params['meta_controller_epoch']))
+
+def GetComprehensiveResultDir(params):
+	return os.path.join(params['result_dir'], 'comprehensive_result')
+
+def GetComprehensiveResultJsonFilePath(params):
+	subdir = GetComprehensiveResultDir(params)
+	return os.path.join(subdir, "comprehensive_result_{:.2f}_epoch.json".format(
+		params['meta_controller_epoch']))
+	
 
 def LoadOracleSelectionData(params):
 	json_path = GetOracleSelectionJsonFilePath(params)
@@ -63,6 +72,7 @@ def EvaluateResult(res_json, vqa_data, ques_json):
 	acc_per_qid = vqa_eval.evaluate()
 	eval_result = {}
 	eval_result['overall'] = vqa_eval.accuracy['overall']
+	eval_result['perAnswerType'] = vqa_eval.accuracy['perAnswerType']
 	eval_result['perQuestionType'] = vqa_eval.accuracy['perQuestionType']
 	eval_result['perQuestionId'] = acc_per_qid
 	return eval_result
