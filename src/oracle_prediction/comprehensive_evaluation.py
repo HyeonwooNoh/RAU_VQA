@@ -94,7 +94,7 @@ def main():
 	acc_per_step_per_question = oracle_utils.GetAccPerStepPerQuestion(
 		eval_results_per_step)
 	is_best_per_question, best_shortest_per_question,\
-		has_correct_answer_per_question = \
+		has_correct_answer_per_question, is_correct_answer_per_question = \
 		oracle_utils.GetBestStepLabelsPerQuestion(acc_per_step_per_question)
 	qid_to_oracle_best_shortest_step = {qid: index+1 for qid, index in \
 		best_shortest_per_question.iteritems()}

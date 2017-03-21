@@ -67,7 +67,7 @@ cmd:option('-display_interval', 10, 'display interval')
 
 cmd:text('CONTROL')
 cmd:option('-prediction_type', 'best_shortest',
-           'Type of oracle prediction [is_best|best_shortest]')
+           'Type of oracle prediction [is_best|best_shortest|is_correct_answer]')
 
 cmd:text('SAVE')
 cmd:option('-save_dir', './experiments/Ours_MS/save_result_vqa_448_val2014'..
@@ -229,7 +229,8 @@ local in_i = nn.Identity()()
    local qfeat = q_embed(in_q)
    local ifeat = i_embed(in_i)
 	local logit
-	if opt.prediction_type == 'is_best' then
+	if opt.prediction_type == 'is_best' or
+		opt.prediction_type == 'is_correct_answer' then
 		logit = Sigmoid()(classifier({qfeat, ifeat}))
 	elseif opt.prediction_type == 'best_shortest' then
 		logit = classifier({qfeat, ifeat})
@@ -237,7 +238,8 @@ local in_i = nn.Identity()()
 protos.multimodal = nn.gModule({in_q, in_i}, {logit})
 
 -- Criterion
-if opt.prediction_type == 'is_best' then
+if opt.prediction_type == 'is_best' or
+	opt.prediction_type == 'is_correct_answer' then
 	protos.criterion = nn.BCECriterion()
 	protos.score_function = nn.Identity()
 elseif opt.prediction_type == 'best_shortest' then
@@ -293,7 +295,8 @@ if opt.gpuid >= 0 then
    test_init_state = test_init_state:cuda()
    test_rnn_out = test_rnn_out:cuda()
 end
-if opt.prediction_type == 'is_best' then
+if opt.prediction_type == 'is_best' or
+	opt.prediction_type == 'is_correct_answer' then
 	train_acc = {}
 	for i = 1, oracle_data.train_data.num_steps do
 		train_acc[i] = 0
@@ -317,7 +320,8 @@ function feval(step_t)
    mult_grad:zero()
 
    ------------------- get minibatch -------------------
-   local feats, x, x_len, is_best, best_shortest, has_correct_answer, qids =
+   local feats, x, x_len, is_best, best_shortest, has_correct_answer, 
+		is_correct_answer, qids =
 		oracle_data.train_data:NextBatchFeature(opt.feat_dir, cnnout_dim,
                                               cnnout_w, cnnout_h)
    if opt.gpuid >= 0 then
@@ -326,6 +330,7 @@ function feval(step_t)
 		is_best = is_best:cuda()
 		best_shortest = best_shortest:cuda()
 		has_correct_answer = has_correct_answer:cuda()
+		is_correct_answer = is_correct_answer:cuda()
    end
    -- make sure we are in correct omde (this is cheap, sets flag)
    -------------------- forward pass -------------------
@@ -355,10 +360,16 @@ function feval(step_t)
 	local logit = protos.multimodal:forward({rnn_out, feats})
 
 	-- Compute accuracy
-	if opt.prediction_type == 'is_best' then
+	if opt.prediction_type == 'is_best' or
+		opt.prediction_type == 'is_correct_answer' then
 		local ans = torch.gt(logit, 0.5):cuda()
 		local pos_count = ans:sum(1):squeeze()
-		local is_correct = torch.eq(ans, is_best):cuda()
+		local is_correct
+		if opt.prediction_type == 'is_best' then
+			is_correct = torch.eq(ans, is_best):cuda()
+		elseif opt.prediction_type == 'is_correct_answer' then
+			is_correct = torch.eq(ans, is_correct_answer):cuda()
+		end
 		local correct_count = is_correct:sum(1):squeeze()
 		for i = 1, oracle_data.train_data.num_steps do
 			train_acc[i] = train_acc[i] + correct_count[i]
@@ -396,6 +407,9 @@ function feval(step_t)
 	if opt.prediction_type == 'is_best' then
 		loss = protos.criterion:forward(logit, is_best)
 		dlogit = protos.criterion:backward(logit, is_best)
+	elseif opt.prediction_type == 'is_correct_answer' then
+		loss = protos.criterion:forward(logit, is_correct_answer)
+		dlogit = protos.criterion:backward(logit, is_correct_answer)
 	elseif opt.prediction_type == 'best_shortest' then
 		loss = protos.criterion:forward(logit, best_shortest)	
 		dlogit = protos.criterion:backward(logit, best_shortest)
@@ -507,7 +521,8 @@ oracle_data.train_data:Reorder()
 local epoch_history = {}
 local trainacc_history = {}
 local testacc_history = {}
-if opt.prediction_type == 'is_best' then
+if opt.prediction_type == 'is_best' or
+	opt.prediction_type == 'is_correct_answer' then
 	for i = 1, oracle_data.train_data.num_steps do
 		trainacc_history[i] = {}
 		testacc_history[i] = {}
@@ -578,7 +593,8 @@ for it = 1, total_iter do
       oracle_data.test_data:Inorder()
       local test_iter = oracle_data.test_data.iter_per_epoch
 		local test_acc
-		if opt.prediction_type == 'is_best' then
+		if opt.prediction_type == 'is_best' or
+			opt.prediction_type == 'is_correct_answer' then
 			test_acc = {}
 			for i = 1, oracle_data.train_data.num_steps do
 				test_acc[i] = 0
@@ -596,18 +612,25 @@ for it = 1, total_iter do
       for k = 1, test_iter do
          print(string.format('test -- [%d/%d]', k, test_iter))
          local feats, x, x_len, is_best, best_shortest, has_correct_answer,
-				qids = oracle_data.test_data:NextBatchFeature(opt.feat_dir,
-				cnnout_dim, cnnout_w, cnnout_h)
+				is_correct_answer, qids = oracle_data.test_data:NextBatchFeature(
+				opt.feat_dir, cnnout_dim, cnnout_w, cnnout_h)
 			if opt.gpuid >= 0 then
 				is_best = is_best:cuda()
 				best_shortest = best_shortest:cuda()
+				is_correct_answer = is_correct_answer:cuda()
 			end
 			local logit, score = predict_result(feats, x, x_len)
 			local max_score, ans
-			if opt.prediction_type == 'is_best' then
+			if opt.prediction_type == 'is_best' or
+				opt.prediction_type == 'is_correct_answer' then
 				ans = torch.gt(logit, 0.5):cuda()
 				local pos_count = ans:sum(1):squeeze()
-				local is_correct = torch.eq(ans, is_best):cuda()
+				local is_correct
+				if opt.prediction_type == 'is_best' then
+					is_correct = torch.eq(ans, is_best):cuda()
+				elseif opt.prediction_type == 'is_correct_answer' then
+					is_correct = torch.eq(ans, is_correct_answer):cuda()
+				end
 				local correct_count = is_correct:sum(1):squeeze()
 				for i = 1, oracle_data.train_data.num_steps do
 					test_acc[i] = test_acc[i] + correct_count[i]
@@ -639,6 +662,12 @@ for it = 1, total_iter do
 						is_best_pred[i] = ans[{bidx, i}]
 					end
 					oracle_predict_result['is_best'] = is_best_pred
+				elseif opt.prediction_type == 'is_correct_answer' then
+					is_correct_answer_pred = {}
+					for i = 1, oracle_data.train_data.num_steps do
+						is_correct_answer_pred[i] = ans[{bidx, i}]
+					end
+					oracle_predict_result['is_correct_answer'] = is_correct_answer_pred
 				elseif opt.prediction_type == 'best_shortest' then
 					oracle_predict_result['best_shortest'] = ans[bidx]
 				end
@@ -652,7 +681,8 @@ for it = 1, total_iter do
          if k % opt.free_interval == 0 then collectgarbage() end
       end
       if train_num_data ~= 0 then 
-			if opt.prediction_type == 'is_best' then
+			if opt.prediction_type == 'is_best' or
+				opt.prediction_type == 'is_correct_answer' then
 				for i = 1, oracle_data.train_data.num_steps do
 					train_acc[i] = train_acc[i] / train_num_data
 				end
@@ -664,7 +694,8 @@ for it = 1, total_iter do
 			end
       end
 		if test_num_data ~= 0 then
-			if opt.prediction_type == 'is_best' then
+			if opt.prediction_type == 'is_best' or
+				opt.prediction_type == 'is_correct_answer' then
 				for i = 1, oracle_data.train_data.num_steps do
 					test_acc[i] = test_acc[i] / test_num_data
 				end
@@ -681,7 +712,8 @@ for it = 1, total_iter do
       table.insert(trainloss_history, accum_trainloss)
       table.insert(lr_history, learningrate)
       table.insert(mult_lr_history, multlearningrate)
-		if opt.prediction_type == 'is_best' then
+		if opt.prediction_type == 'is_best' or
+			opt.prediction_type == 'is_correct_answer' then
 			for i = 1, oracle_data.train_data.num_steps do
 				table.insert(trainacc_history[i], train_acc[i])
 				table.insert(testacc_history[i], test_acc[i])
@@ -738,7 +770,8 @@ for it = 1, total_iter do
       end
       local tab_testlog = {}
       tab_testlog['epoch'] = epoch
-		if opt.prediction_type == 'is_best' then
+		if opt.prediction_type == 'is_best' or
+			opt.prediction_type == 'is_correct_answer' then
 			for i = 1, oracle_data.train_data.num_steps do
 				tab_testlog[string.format('trainacc_%02d', i)] = train_acc[i] * 100
 				tab_testlog[string.format('testacc_%02d', i)] = test_acc[i] * 100
@@ -750,7 +783,8 @@ for it = 1, total_iter do
       testLogger:add(tab_testlog)
       print(string.format('iter: %d, epoch: %f', it, epoch))
       print_acc = ''
-		if opt.prediction_type == 'is_best' then
+		if opt.prediction_type == 'is_best' or
+			opt.prediction_type == 'is_correct_answer' then
 			for i = 1, oracle_data.train_data.num_steps do
 				print_acc = print_acc .. string.format(
 					'trainacc_%02d: %f, ',i, train_acc[i] * 100)
@@ -797,7 +831,8 @@ for it = 1, total_iter do
       checkpoint.params = {[1]=embed_param, [2]=rnn_param, [3]=mult_param}
       torch.save(savefile, checkpoint)
 	
-		if opt.prediction_type == 'is_best' then
+		if opt.prediction_type == 'is_best' or
+			opt.prediction_type == 'is_correct_answer' then
 			for i = 1, oracle_data.train_data.num_steps do
 				train_acc[i] = 0
 			end

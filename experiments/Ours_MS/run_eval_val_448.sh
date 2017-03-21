@@ -1,7 +1,8 @@
 CHECKPOINT_PATH=$1
 STEP_SELECTOR_PATH=$2
 PREDICTION_TYPE=$3
-SAVE_DIR=$4
+META_CONTROLLER_EPOCH=$4
+SAVE_DIR=$5
 
 if [[ "${CHECKPOINT_PATH}" != *.t7 ]]; then
 	echo "Wrong first argument: path to the checkpoint (*.t7)"
@@ -11,12 +12,18 @@ if [[ "${STEP_SELECTOR_PATH}" != *.json ]]; then
 	echo "Wrong second argument: path to step selection result file (*.json)"
 	exit
 fi
-if [ "${PREDICTION_TYPE}" != "is_best" ] && [ "${PREDICTION_TYPE}" != "best_shortest" ]; then
-	echo "Wrong third argument: prediction_type [is_best|best_shortest]"
+if [ "${PREDICTION_TYPE}" != "is_best" ] && \
+	[ "${PREDICTION_TYPE}" != "best_shortest" ] && \
+	[ "${PREDICTION_TYPE}" != "is_correct_answer" ]; then
+	echo "Wrong third argument: prediction_type [is_best|best_shortest|is_correct_answer]"
 	exit
 fi
+re_int='^[0-9]+$'
+if ! [[ "${META_CONTROLLER_EPOCH}" =~ $re_int ]]; then
+	echo "Wrong fourth argument: meta_controller_epoch (integer)"
+fi
 if [ "${SAVE_DIR}" == "" ]; then
-	echo "Wrong fourth argument: save_dir (ex: save_result_eval_ms_vgg_448)"
+	echo "Wrong fifth argument: save_dir (ex: save_result_eval_ms_vgg_448)"
 	exit
 fi
 
@@ -33,4 +40,5 @@ th eval.lua \
 	-batch_size 80 \
 	-init_from ${CHECKPOINT_PATH} \
 	-step_selector_path ${STEP_SELECTOR_PATH} \
-	-prediction_type ${PREDICTION_TYPE}
+	-prediction_type ${PREDICTION_TYPE} \
+	-meta_controller_epoch ${META_CONTROLLER_EPOCH}

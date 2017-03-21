@@ -95,16 +95,19 @@ def GetAccPerStepPerQuestion(eval_results_per_step):
 			acc_per_step_per_question[ques].append(acc)
 	return acc_per_step_per_question
 
-def GetBestStepLabelsPerQuestion(acc_per_step_per_question):
+def GetBestStepLabelsPerQuestion(acc_per_step_per_question,
+                                 is_correct_answer_threshold=50):
 	is_best_per_question = {}
 	best_shortest_per_question = {}
 	has_correct_answer_per_question = {}
+	is_correct_answer_per_question = {}
 	for ques, acc_list in acc_per_step_per_question.iteritems():
 		max_acc = max(acc_list)
 		is_best = [int(acc == max_acc) for acc in acc_list]
 		is_best_per_question[ques] = is_best
 		best_shortest_per_question[ques] = acc_list.index(max_acc)
 		has_correct_answer_per_question[ques] = int(max_acc > 0)
+		is_correct_answer_per_question[ques] = [
+			int(acc >= is_correct_answer_threshold) for acc in acc_list]
 	return is_best_per_question, best_shortest_per_question, \
-		has_correct_answer_per_question
-	
+		has_correct_answer_per_question, is_correct_answer_per_question

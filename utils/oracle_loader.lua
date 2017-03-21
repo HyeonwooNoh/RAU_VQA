@@ -52,6 +52,7 @@ do
 		self.is_best = questions['is_best']
 		self.best_shortest = questions['best_shortest']
 		self.has_correct_answer = questions['has_correct_answer']
+		self.is_correct_answer = questions['is_correct_answer']
 		self.num_steps = self.is_best:size(2)
 		self.sequence_length = sequence_length
 		self.num_examples = self.question:size(1)
@@ -115,6 +116,7 @@ do
 		local batch_is_best
 		local batch_best_shortest
 		local batch_has_correct_answer
+		local batch_is_correct_answer
 		local batch_feat
 		local local_feat_list
 
@@ -177,6 +179,7 @@ do
 			batch_is_best = self.is_best:index(1, bInds):clone()
 			batch_best_shortest = self.best_shortest:index(1, bInds):clone()
 			batch_has_correct_answer = self.has_correct_answer:index(1, bInds):clone()
+			batch_is_correct_answer = self.is_correct_answer:index(1, bInds):clone()
   
 			-- update batch counter
 			self.batch_index = self.batch_index + self.batch_size
@@ -243,6 +246,7 @@ do
 			batch_is_best = self.is_best:index(1, bInds):clone()
 			batch_best_shortest = self.best_shortest:index(1, bInds):clone()
 			batch_has_correct_answer = self.has_correct_answer:index(1, bInds):clone()
+			batch_is_correct_answer = self.is_correct_answer:index(1, bInds):clone()
 
 			local_feat_list = {}
 			for i = 1, self.batch_size do
@@ -279,7 +283,7 @@ do
 		return batch_feat:clone(), batch_q:transpose(1,2):clone(),
 			batch_q_len:clone(), batch_is_best:clone(),
 			batch_best_shortest:clone(), batch_has_correct_answer:clone(),
-			batch_qid:clone()
+			batch_is_correct_answer:clone(), batch_qid:clone()
 	end
 
 	function DataFetcher:SetBatchOrderOption(batch_order_option)
@@ -399,6 +403,7 @@ do
 		--			'/is_best_train': tensor[nExample, num_steps]
 		--			'/best_shortest_train': tensor[nExample]
 		--			'/has_correct_answer_train': tensor[nExample]
+		--			'/is_correct_answer_train': tensor[nExample, num_steps]
 		--           
 		--       [test]
 		--       '/ques_test': tensor[nExample, SeqLen] (word index)
@@ -410,6 +415,7 @@ do
 		--			'/is_best_test': tensor[nExample, num_steps]
 		--			'/best_shortest_test': tensor[nExample]
 		--			'/has_correct_answer_test': tensor[nExample]
+		--			'/is_correct_answer_test': tensor[nExample, num_steps]
 		local hdf5_path = paths.concat(config['data_dir'], 'data_prepro.h5')
 		local hdf5_data = LoadHdf5(hdf5_path)
 
@@ -480,6 +486,7 @@ do
 		split_data['is_best'] = hdf5_data['is_best_'..split]
 		split_data['best_shortest'] = hdf5_data['best_shortest_'..split]
 		split_data['has_correct_answer'] = hdf5_data['has_correct_answer_'..split]
+		split_data['is_correct_answer'] = hdf5_data['is_correct_answer_'..split]
 		return split_data
 	end
 end

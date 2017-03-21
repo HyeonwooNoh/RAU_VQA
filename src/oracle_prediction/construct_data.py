@@ -28,9 +28,9 @@ def _GetArgs():
 	parser.add_argument("--task_type", default=oracle_utils.TaskType.OPEN_ENDED,
 		help="Task type: [{}|{}]".format(
 		oracle_utils.TaskType.OPEN_ENDED, oracle_utils.TaskType.MULTIPLE_CHOICE))
-	parser.add_argument("--num_steps", default=8,
+	parser.add_argument("--num_steps", default=8, type=int,
 		help="Number of steps used for the target recurrent answering units")
-	parser.add_argument("--num_epochs", default=40,
+	parser.add_argument("--num_epochs", default=40, type=int,
 		help="Number of epochs for trained models")
 	parser.add_argument("--algorithm_name",
 		default="LstmAttCtrlGradNoiseDontSelect448Pool5",
@@ -41,12 +41,15 @@ def _GetArgs():
 	parser.add_argument("--question_json",
 		default="data/VQA_anno/OpenEnded_mscoco_val2014_questions.json",
 		help="Question json file")
+	parser.add_argument("--is_correct_answer_threshold", default=50, type=float,
+		help="Threshold for is_correct_answer label [0~100]")
 	args = parser.parse_args()
 	return args
 
 def ConstructBestStepTrainingData(is_best_per_question,
                                   best_shortest_per_question,
-                                  has_correct_answer_per_question):
+                                  has_correct_answer_per_question,
+                                  is_correct_answer_per_question):
 	valid_1_hdf5_path = os.path.join(_PREPRO_VALID_1_DIR, _HDF5_FILE)
 	valid_1_hdf5 = utils.LoadHdf5Data(valid_1_hdf5_path)
 	print "Hdf5 for valid 1 is loaded from {}:".format(valid_1_hdf5_path)
@@ -70,6 +73,9 @@ def ConstructBestStepTrainingData(is_best_per_question,
 	best_step_train_hdf5['has_correct_answer_train'] = np.array(
 		[has_correct_answer_per_question[qid] for qid in \
 		best_step_train_hdf5['question_id_train']])
+	best_step_train_hdf5['is_correct_answer_train'] = np.array(
+		[is_correct_answer_per_question[qid] for qid in \
+		best_step_train_hdf5['question_id_train']])
 
 	# Valid 2 becomes test split
 	best_step_train_hdf5['img_pos_test'] = valid_2_hdf5['img_pos_test']
@@ -84,6 +90,9 @@ def ConstructBestStepTrainingData(is_best_per_question,
 		best_step_train_hdf5['question_id_test']]) + 1
 	best_step_train_hdf5['has_correct_answer_test'] = np.array(
 		[has_correct_answer_per_question[qid] for qid in \
+		best_step_train_hdf5['question_id_test']])
+	best_step_train_hdf5['is_correct_answer_test'] = np.array(
+		[is_correct_answer_per_question[qid] for qid in \
 		best_step_train_hdf5['question_id_test']])
 
 	valid_1_json_path = os.path.join(_PREPRO_VALID_1_DIR, _JSON_FILE)
@@ -118,12 +127,13 @@ def main():
 
 	print "Compute best step labels per question."
 	is_best_per_question, best_shortest_per_question,\
-		has_correct_answer_per_question = \
-		oracle_utils.GetBestStepLabelsPerQuestion(acc_per_step_per_question)
+		has_correct_answer_per_question, is_correct_answer_per_question = \
+		oracle_utils.GetBestStepLabelsPerQuestion(acc_per_step_per_question,
+		is_correct_answer_threshold=params['is_correct_answer_threshold'])
 
 	best_step_train_hdf5, best_step_train_json = ConstructBestStepTrainingData(
 		is_best_per_question, best_shortest_per_question,
-		has_correct_answer_per_question)
+		has_correct_answer_per_question, is_correct_answer_per_question)
 
 	oracle_data_dir = oracle_utils.GetOraclePredictionDataDir(params)
 	utils.CheckAndCreateDir(oracle_data_dir)

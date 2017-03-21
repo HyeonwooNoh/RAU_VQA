@@ -58,7 +58,9 @@ cmd:option('-seed', 123, 'torch manual random number generator seed')
 
 cmd:text('META CONTROLLER')
 cmd:option('-step_selector_path', '', 'Path to step selection scores')
-cmd:option('-prediction_type', 'is_best', 'Prediction type [is_best|best_shortest]')
+cmd:option('-prediction_type', 'is_best',
+           'Prediction type [is_best|best_shortest|is_correct_answer]')
+cmd:option('-meta_controller_epoch', 0, 'Epoch for meta controller')
 
 cmd:text('GPU')
 cmd:option('-gpuid', 0, 'which GPU to use. -1 = use CPU')
@@ -129,8 +131,10 @@ print('')
 print('')
 
 -- constant options
-opt.save_dir = string.format('%s_%s/%s/epoch_%03d', opt.save_dir,opt.split, 
-                                                    snap.opt.alg_name,snap.epoch) 
+opt.save_dir = string.format('%s_%s/%s/epoch_%03d/meta_controller_epoch_%03d',
+                             opt.save_dir,opt.split, 
+                             snap.opt.alg_name,snap.epoch,
+                             opt.meta_controller_epoch) 
 opt.log_dir = 'training_log'
 opt.snapshot_dir = 'snapshot'
 opt.results_dir = 'results'
@@ -151,6 +155,7 @@ print('create directory and log file')
 
 local step_selection_json = cjson.decode(io.open(opt.step_selector_path, 'r'):read())
 local qid_to_is_best
+local qid_to_is_correct
 local qid_to_best_shortest
 local qid_to_score_values
 if opt.prediction_type == 'is_best' then
@@ -158,6 +163,13 @@ if opt.prediction_type == 'is_best' then
 	qid_to_score_values = {}
 	for k, v in pairs(step_selection_json) do
 		qid_to_is_best[v['question_id']] = v['is_best']
+		qid_to_score_values[v['question_id']] = v['score_values']
+	end
+elseif opt.prediction_type == 'is_correct_answer' then
+	qid_to_is_correct_answer = {}
+	qid_to_score_values = {}
+	for k, v in pairs(step_selection_json) do
+		qid_to_is_correct_answer[v['question_id']] = v['is_correct_answer']
 		qid_to_score_values[v['question_id']] = v['score_values']
 	end
 elseif opt.prediction_type == 'best_shortest' then
@@ -483,20 +495,30 @@ function predict_result (feats, x, x_len, qids)
    test_did_pred:zero()
 	local score_values = {}
 	local is_best = {}
+	local is_correct_answer = {}
 	local best_shortest = {}
 	for bidx=1, qids:size(1) do
 		table.insert(score_values, qid_to_score_values[qids[bidx]])
 		if opt.prediction_type == 'is_best' then
 			table.insert(is_best, qid_to_is_best[qids[bidx]])
+		elseif opt.prediction_type == 'is_correct_answer' then
+			b_is_correct_answer = qid_to_is_correct_answer[qids[bidx]]
+			if torch.Tensor(b_is_correct_answer):sum() == 0 then
+				b_is_correct_answer[1] = 1
+			end 
+			table.insert(is_correct_answer, b_is_correct_answer)
 		elseif opt.prediction_type == 'best_shortest' then
 			table.insert(best_shortest, qid_to_best_shortest[qids[bidx]])
 		end
 	end
 	local score_values_tensor = torch.Tensor(score_values):cuda()
 	local is_best_tensor
+	local is_correct_answer_tensor
 	local best_shortest_tensor
 	if opt.prediction_type == 'is_best' then
 		is_best_tensor = torch.Tensor(is_best)
+	elseif opt.prediction_type == 'is_correct_answer' then
+		is_correct_answer_tensor = torch.Tensor(is_correct_answer)
 	elseif opt.prediction_type == 'best_shortest' then
 		best_shortest_tensor = torch.Tensor(best_shortest)
 	end
@@ -523,6 +545,13 @@ function predict_result (feats, x, x_len, qids)
 				is_best_cur_hop:repeatTensor(1, netout_dim)))
 			test_hard_aggregate_att:add(torch.cmul(pred[3],
 				is_best_cur_hop:repeatTensor(1, cnnout_spat)))
+		elseif opt.prediction_type == 'is_correct_answer' then
+			is_correct_answer_cur_hop = is_correct_answer_tensor:narrow(
+				2,h,1):reshape(opt.test_batch_size, 1):cuda()
+			test_hard_aggregate_pred:add(torch.cmul(pred[1],
+				is_correct_answer_cur_hop:repeatTensor(1, netout_dim)))
+			test_hard_aggregate_att:add(torch.cmul(pred[3],
+				is_correct_answer_cur_hop:repeatTensor(1, cnnout_spat)))
 		elseif opt.prediction_type == 'best_shortest' then
 			is_best_shortest_cur_hop = best_shortest_tensor:eq(h):reshape(
 				opt.test_batch_size,1):cuda()
